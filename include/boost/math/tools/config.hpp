@@ -481,6 +481,17 @@ namespace boost{ namespace math{
 #define BOOST_MATH_CONSTEXPR_TABLE_FUNCTION
 #endif
 
+//
+// CUDA support:
+//
+
+#ifdef __CUDACC__
+#  define BOOST_MATH_CUDA_ENABLED __host__ __device__
+#endif
+
+#ifndef BOOST_MATH_CUDA_ENABLED
+#  define BOOST_MATH_CUDA_ENABLED
+#endif
 
 #endif // BOOST_MATH_TOOLS_CONFIG_HPP
 
