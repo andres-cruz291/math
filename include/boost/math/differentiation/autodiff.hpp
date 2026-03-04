@@ -19,8 +19,8 @@
 #include <boost/math/special_functions/lambert_w.hpp>
 #include <boost/math/tools/config.hpp>
 #include <boost/math/tools/promotion.hpp>
-#include <boost/math/differentiation/array.hpp>
-#include <boost/math/differentiation/autodiff_std.hpp>
+#include <boost/math/differentiation/cuda/array.hpp>
+#include <boost/math/differentiation/cuda/autodiff_std.hpp>
 
 #include <algorithm>
 #include <array>
