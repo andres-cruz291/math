@@ -61,15 +61,6 @@ BOOST_MATH_CUDA_ENABLED T accumulate(Iterator1 first, Iterator1 last, T init, Bi
     return init;
 }
 
-template <typename T>
-BOOST_MATH_CUDA_ENABLED constexpr T factorial(unsigned n)
-{
-    T result = T(1);
-    for (unsigned i = 2; i <= n; ++i)
-        result *= T(i);
-    return result;
-}
-
 template <class T>
 BOOST_MATH_CUDA_ENABLED constexpr const T& min(const T& a, const T& b)
 {

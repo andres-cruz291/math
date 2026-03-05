@@ -96,7 +96,7 @@ BOOST_MATH_CUDA_ENABLED get_type_at<fvar<RealType, Order>, sizeof...(Orders)> fv
   static_assert(sizeof...(Orders) <= depth,
                 "Number of parameters to derivative(...) cannot exceed fvar::depth.");
   return at(static_cast<size_t>(orders)...) *
-         product(factorial<root_type>(static_cast<unsigned>(orders))...);
+         product(boost::math::factorial<root_type>(static_cast<unsigned>(orders))...);
 }
 
 template <typename RootType, typename Func>
