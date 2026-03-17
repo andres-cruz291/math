@@ -395,5 +395,5 @@ run test_trunc_double.cu ;
 run test_trunc_float.cu ;
 
 # Autodiff
-run test_autodiff_cuda_1_float.cu ;
-run test_autodiff_cuda_1_double.cu ;
+run test_autodiff_cuda_float.cu ;
+run test_autodiff_cuda_double.cu ;

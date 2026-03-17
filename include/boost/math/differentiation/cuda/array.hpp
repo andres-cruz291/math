@@ -77,6 +77,10 @@ struct std_array
         {
             return ptr != other.ptr;
         }
+
+        BOOST_MATH_CUDA_ENABLED T* operator->() const {
+            return ptr;
+        }
     };
 
     struct reverse_iterator {
@@ -91,6 +95,10 @@ struct std_array
 
         BOOST_MATH_CUDA_ENABLED reverse_iterator operator+(size_t x) const {
             return reverse_iterator{ ptr - x };
+        }
+
+        BOOST_MATH_CUDA_ENABLED T const* operator->() const {
+            return ptr;
         }
     };
 public:
@@ -165,16 +173,16 @@ public:
         return reverse_iterator{&storage_[N - 1]};
     }
     BOOST_MATH_CUDA_ENABLED reverse_iterator rend (void) {
-        return reverse_iterator{&storage_[-1]};
+        return reverse_iterator{storage_ - 1};
     }
     BOOST_MATH_CUDA_ENABLED reverse_iterator rend (void) const {
-        return reverse_iterator{&storage_[-1]};
+        return reverse_iterator{storage_ - 1};
     }
     BOOST_MATH_CUDA_ENABLED reverse_iterator crbegin (void) const {
         return reverse_iterator{&storage_[N - 1]};
     }
     BOOST_MATH_CUDA_ENABLED reverse_iterator crend (void) const {
-        return reverse_iterator{&storage_[-1]};
+        return reverse_iterator{storage_ - 1};
     }
     BOOST_MATH_CUDA_ENABLED T& at (size_t i) {
         assert(i < N);

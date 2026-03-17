@@ -20,6 +20,23 @@
 #include <iomanip>
 #include <vector>
 
+
+constexpr std::size_t m = 3;
+constexpr std::size_t n = 4;
+
+template <typename T, typename T1>
+BOOST_MATH_CUDA_ENABLED void fill_output_sv(T variable, T1 *out, uint i, uint offset, uint ft){
+    for (uint j = 0; j < ft; ++j)
+        out[i * offset + j] = variable.derivative(j);
+}
+
+template <typename T, typename T1>
+BOOST_MATH_CUDA_ENABLED void fill_output_dv(T variable, T1 *out, uint i, uint offset, uint ft, uint st){
+    for (uint j = 0; j < ft; ++j)
+        for (uint k = 0; k < st; ++k)
+            out[i * offset + (j * (n + 1)) + k] = variable.derivative(j, k);
+}
+
 namespace diff = boost::math::differentiation;
 
 template<typename T>
@@ -128,16 +145,48 @@ bool verifyEqualOutputs
     std::vector<std::vector<T>> h_output
   , std::vector<std::vector<T>> referenceData
 ){
-    bool err = true;
+    bool valid = true;
     for(uint i = 0; i < h_output.size(); ++i){
         for(uint j = 0; j < h_output[i].size(); ++j){
             if (h_output[i][j] != referenceData[i][j]){
                 std::cerr << "Result verification failed at element " << j << " of output " << i << "! Value: "<< h_output[i][j] << std::endl;
-                err = false;
+                valid = false;
             }
         }
     }
-    return err;
+    return valid;
+}
+
+template<typename T>
+bool verifyCloseOutputs
+( 
+    std::vector<std::vector<T>> h_output
+  , std::vector<std::vector<T>> referenceData
+  , T tolerance_percent
+){
+    bool valid = true;
+    for(uint i = 0; i < h_output.size(); ++i){
+        for(uint j = 0; j < h_output[i].size(); ++j){
+            if (h_output[i][j] == referenceData[i][j]){
+                continue;
+            }
+            T diff = std::fabs(h_output[i][j] - referenceData[i][j]);
+            T largest = std::max(std::fabs(h_output[i][j]), std::fabs(referenceData[i][j]));
+            if (largest == 0){
+                if (diff != 0){
+                    std::cerr << "Result verification failed at element " << j << " of output " << i << "! Value: "<< h_output[i][j] << std::endl;
+                    valid = false;
+                }
+            }
+
+            T relative_error = (diff / largest) * 100;
+            if (relative_error > tolerance_percent){
+                std::cerr << "Result verification closeness failed at element " << j << " of output " << i << "! Value: "<< h_output[i][j] << " ref "<<referenceData[i][j] << std::endl;
+                valid = false;
+            }
+        }
+    }
+    return valid;
 }
 
 #endif  // BOOST_MATH_TEST_AUTODIFF_HPP

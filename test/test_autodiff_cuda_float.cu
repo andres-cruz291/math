@@ -5,11 +5,16 @@
 //  LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 
 #include "test_autodiff_cuda_1.cu"
+#include "test_autodiff_cuda_2.cu"
 
 /**
  * Host main routine
  */
 int main(void)
 {
-    return main_tests_1<float>(32);
+    if (!main_tests_1<float>(32))
+        return EXIT_FAILURE;
+    if (!main_tests_2<float>(32))
+        return EXIT_FAILURE;
+    return 0;
 }
