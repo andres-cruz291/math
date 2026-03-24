@@ -97,6 +97,7 @@ struct get_order_sum_t<fvar<RealType, Order>>
 
 template <typename T>
 using get_order_sum = get_order_sum_t<typename std::decay<T>::type>;
+//struct get_order_sum : get_order_sum_t<std::remove_cv_t<std::remove_reference_t<T>>> {};
 
 template <typename RealType>
 struct get_root_type {
@@ -323,7 +324,13 @@ class fvar {
 
   static constexpr size_t depth = get_depth<fvar>::value;  // Number of nested std::array<RealType,Order>.
 
+#ifndef __CUDACC__  
   static constexpr size_t order_sum = get_order_sum<fvar>::value;
+#else
+  enum : size_t {
+      order_sum = get_order_sum_t<fvar<RealType, Order>>::value
+  };
+#endif
 
   BOOST_MATH_CUDA_ENABLED explicit operator root_type() const;  // Must be explicit, otherwise overloaded operators are ambiguous.
 

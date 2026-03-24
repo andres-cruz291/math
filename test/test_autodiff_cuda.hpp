@@ -34,7 +34,97 @@ template <typename T, typename T1>
 BOOST_MATH_CUDA_ENABLED void fill_output_dv(T variable, T1 *out, uint i, uint offset, uint ft, uint st){
     for (uint j = 0; j < ft; ++j)
         for (uint k = 0; k < st; ++k)
-            out[i * offset + (j * (n + 1)) + k] = variable.derivative(j, k);
+            out[i * offset + (j * st) + k] = variable.derivative(j, k);
+}
+
+template <typename T, typename Op>
+__global__ void apply_op(T *out, int numElements, Op op)
+{
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    if (i < numElements) {
+        op(i, out);
+    }
+}
+
+template <typename T, typename Op>
+__global__ void apply_op(T *out, int numElements, T cx, Op op)
+{
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    if (i < numElements) {
+        op(i, out, cx);
+    }
+}
+
+template <typename T, typename Op>
+__global__ void apply_op(T *out, int numElements, T cx, T cy, Op op)
+{
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    if (i < numElements) {
+        op(i, out, cx, cy);
+    }
+}
+
+template <typename T, typename Op>
+__global__ void apply_op(T *out, T *out1, int numElements, T cx, Op op)
+{
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    if (i < numElements) {
+        op(i, out, out1, cx);
+    }
+}
+
+template <typename T, typename Op>
+__global__ void apply_op(T *out, T *out1, int numElements, T cx, T cy, Op op)
+{
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    if (i < numElements) {
+        op(i, out, out1, cx, cy);
+    }
+}
+
+template <typename T, typename Op>
+__global__ void apply_op(T *out, T *out1, T *out2, int numElements, T cx, T cy, Op op)
+{
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    if (i < numElements) {
+        op(i, out, out1, out2, cx, cy);
+    }
+}
+
+template <typename T, typename Op>
+__global__ void apply_op(T *out, T *out1, T *out2, int numElements, T cx, T cy, T cz, Op op)
+{
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    if (i < numElements) {
+        op(i, out, out1, out2, cx, cy, cz);
+    }
+}
+
+template <typename T, typename Op>
+__global__ void apply_op(T *out, T *out1, T *out2, T *out3, int numElements, T cx, T cy, Op op)
+{
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    if (i < numElements) {
+        op(i, out, out1, out2, out3, cx, cy);
+    }
+}
+
+template <typename T, typename Op>
+__global__ void apply_op(T *out, T *out1, T *out2, T *out3, int numElements, T cx, T cy, T cz, Op op)
+{
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    if (i < numElements) {
+        op(i, out, out1, out2, out3, cx, cy, cz);
+    }
+}
+
+template <typename T, typename Op>
+__global__ void apply_op(T *out, T *out2, T *out3, T *out4, T* out5, int numElements, T cx, T cy, Op op)
+{
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    if (i < numElements) {
+        op(i, out, out2, out3, out4, out5, cx, cy);
+    }
 }
 
 namespace diff = boost::math::differentiation;
@@ -43,12 +133,14 @@ template<typename T>
 struct KernelLaunchConfig
 {
     int numElements;
-    std::vector<std::vector<T>> inputElements;
-    std::vector<uint> outputElements;
+    std::vector<std::vector<T>> inputVars;
+    std::vector<uint> h_outputVars;
+    std::vector<uint> d_outputVars;
     int threadsPerBlock;
     int blocksPerGrid;
     std::vector<T*> d_inputs;
     std::vector<T*> d_outputs;
+    std::vector<T*> h_outputs;
 };
 
 template<typename T>
@@ -70,8 +162,9 @@ KernelLaunchConfig<T> prepareKernelLaunch
     KernelLaunchConfig<T> config;
 
     config.numElements = numElements;
-    config.inputElements = inputVars;
-    config.outputElements = outputVars;
+    config.inputVars = inputVars;
+    config.h_outputVars = outputVars;
+    config.d_outputVars = outputVars;
     config.threadsPerBlock = threadsPerBlock;
     config.blocksPerGrid = (numElements + threadsPerBlock - 1) / threadsPerBlock;
 
@@ -98,12 +191,18 @@ KernelLaunchConfig<T> prepareKernelLaunch
     config.d_outputs.resize(outputVars.size());
     for (int i = 0; i < outputVars.size(); ++i)
     {
-        err = cudaMalloc(&config.d_outputs[i], outputVars[i] * sizeof(T));
+        config.d_outputVars[i] *= numElements;
+        err = cudaMalloc(&config.d_outputs[i], config.d_outputVars[i] * sizeof(T));
         if (err != cudaSuccess)
         {
             std::cerr << "Failed to allocate output " << i << std::endl;
             exit(EXIT_FAILURE);
         }
+    }
+
+    config.h_outputs.resize(outputVars.size());
+    for (uint i = 0; i < outputVars.size(); ++i){
+        config.h_outputs[i] = new T[outputVars[i]];
     }
     return config;
 }
@@ -123,17 +222,30 @@ bool verifyCudaStatus
 }
 
 template<typename T>
+std::vector<std::vector<T>> defineReferenceData(KernelLaunchConfig<T> cfg){
+    std::vector<std::vector<T>> referenceData(cfg.h_outputVars.size());
+    for (uint i = 0; i < cfg.h_outputVars.size(); ++i){
+        referenceData[i].resize(cfg.d_outputVars[i]);
+        for (uint j = 0; j < cfg.h_outputVars[i]; ++j)
+            for (uint k = 0; k < cfg.numElements; ++k)
+                referenceData[i][k * cfg.h_outputVars[i] + j] = cfg.h_outputs[i][j];
+        
+    }
+    return referenceData;
+}
+
+template<typename T>
 std::vector<std::vector<T>> returnOutputs(KernelLaunchConfig<T> cfg){
-    std::vector<std::vector<T>> output(cfg.outputElements.size());
+    std::vector<std::vector<T>> output(cfg.d_outputVars.size());
     for (uint i = 0; i < cfg.d_inputs.size(); ++i){
         cudaFree(cfg.d_inputs[i]);
     }
-    for (uint i = 0; i < cfg.outputElements.size(); ++i){
-        T h_output[cfg.outputElements[i]];
-        output[i].resize(cfg.outputElements[i]);
-        cudaMemcpy(h_output, cfg.d_outputs[i], cfg.outputElements[i] * sizeof(T), cudaMemcpyDeviceToHost);
+    for (uint i = 0; i < cfg.d_outputVars.size(); ++i){
+        T h_output[cfg.d_outputVars[i]];
+        output[i].resize(cfg.d_outputVars[i]);
+        cudaMemcpy(h_output, cfg.d_outputs[i], cfg.d_outputVars[i] * sizeof(T), cudaMemcpyDeviceToHost);
         cudaFree(cfg.d_outputs[i]);
-        for (uint j = 0; j < cfg.outputElements[i]; ++j)
+        for (uint j = 0; j < cfg.d_outputVars[i]; ++j)
           output[i][j] = h_output[j];
     }
     return output;
@@ -149,7 +261,7 @@ bool verifyEqualOutputs
     for(uint i = 0; i < h_output.size(); ++i){
         for(uint j = 0; j < h_output[i].size(); ++j){
             if (h_output[i][j] != referenceData[i][j]){
-                std::cerr << "Result verification failed at element " << j << " of output " << i << "! Value: "<< h_output[i][j] << std::endl;
+                std::cerr << "Result verification failed at element " << j << " of output " << i << "! Value: "<< h_output[i][j] << " Reference: " << referenceData[i][j] << std::endl;
                 valid = false;
             }
         }
@@ -187,6 +299,380 @@ bool verifyCloseOutputs
         }
     }
     return valid;
+}
+
+template <typename T, typename Op>
+bool verify_test
+(
+    std::string testName
+  , uint numElements
+  , uint os
+  , Op op)
+{    
+    // Prepare the kernel launch
+    auto cfg = prepareKernelLaunch<T>( testName, numElements, {}, { os });
+
+    if (!verifyCudaStatus("prepare", testName))
+        return false;
+    
+    watch w;
+    // Execute the kernel
+    apply_op<T><<<cfg.blocksPerGrid, cfg.threadsPerBlock>>>(cfg.d_outputs[0], numElements, op);
+    cudaDeviceSynchronize();
+
+    std::cout << "CUDA kernel done in: " << w.elapsed() << "s" << std::endl;
+    if (!verifyCudaStatus("launch", testName))
+        return false;
+    
+    std::vector<std::vector<T>> h_out = returnOutputs(cfg);
+    op(0, cfg.h_outputs[0]);
+    std::vector<std::vector<T>> referenceData = defineReferenceData(cfg);
+    if (!verifyEqualOutputs(h_out, referenceData))
+       return false;
+    std::cout << "Test PASSED" << std::endl;
+    std::cout << "Done\n";
+
+    return true;
+}
+
+template <typename T, typename Op>
+bool verify_test
+(
+    const std::string& testName
+  , uint numElements
+  , uint os
+  , const T cx
+  , Op op)
+{    
+    // Prepare the kernel launch
+    auto cfg = prepareKernelLaunch<T>( testName, numElements, {}, { os });
+
+    if (!verifyCudaStatus("prepare", testName))
+        return false;
+    
+    watch w;
+    // Execute the kernel
+    apply_op<T><<<cfg.blocksPerGrid, cfg.threadsPerBlock>>>(cfg.d_outputs[0], numElements, cx, op);
+    cudaDeviceSynchronize();
+
+    std::cout << "CUDA kernel done in: " << w.elapsed() << "s" << std::endl;
+    if (!verifyCudaStatus("launch", testName))
+        return false;
+    
+    std::vector<std::vector<T>> h_out = returnOutputs(cfg);
+    op(0, cfg.h_outputs[0], cx);
+    std::vector<std::vector<T>> referenceData = defineReferenceData(cfg);
+    if (!verifyEqualOutputs(h_out, referenceData))
+       return false;
+    std::cout << "Test PASSED" << std::endl;
+    std::cout << "Done\n";
+
+    return true;
+}
+
+template <typename T, typename Op>
+bool verify_test
+(
+    const std::string& testName
+  , uint numElements
+  , uint os
+  , const T cx
+  , const T cy
+  , Op op)
+{    
+    // Prepare the kernel launch
+    auto cfg = prepareKernelLaunch<T>( testName, numElements, {}, { os });
+
+    if (!verifyCudaStatus("prepare", testName))
+        return false;
+    
+    watch w;
+    // Execute the kernel
+    apply_op<T><<<cfg.blocksPerGrid, cfg.threadsPerBlock>>>(cfg.d_outputs[0], numElements, cx, cy, op);
+    cudaDeviceSynchronize();
+
+    std::cout << "CUDA kernel done in: " << w.elapsed() << "s" << std::endl;
+    if (!verifyCudaStatus("launch", testName))
+        return false;
+    
+    std::vector<std::vector<T>> h_out = returnOutputs(cfg);
+    op(0, cfg.h_outputs[0], cx, cy);
+    std::vector<std::vector<T>> referenceData = defineReferenceData(cfg);
+    if (!verifyEqualOutputs(h_out, referenceData))
+       return false;
+    std::cout << "Test PASSED" << std::endl;
+    std::cout << "Done\n";
+
+    return true;
+}
+
+template <typename T, typename Op>
+bool verify_test
+(
+    const std::string& testName
+  , uint numElements
+  , uint os
+  , uint os1
+  , const T cx
+  , Op op)
+{    
+    // Prepare the kernel launch
+    auto cfg = prepareKernelLaunch<T>( testName, numElements, {}, { os, os1 });
+
+    if (!verifyCudaStatus("prepare", testName))
+        return false;
+    
+    watch w;
+    // Execute the kernel
+    apply_op<T><<<cfg.blocksPerGrid, cfg.threadsPerBlock>>>(cfg.d_outputs[0], cfg.d_outputs[1], numElements, cx, op);
+    cudaDeviceSynchronize();
+
+    std::cout << "CUDA kernel done in: " << w.elapsed() << "s" << std::endl;
+    if (!verifyCudaStatus("launch", testName))
+        return false;
+    
+    std::vector<std::vector<T>> h_out = returnOutputs(cfg);
+    op(0, cfg.h_outputs[0], cfg.h_outputs[1], cx);
+    std::vector<std::vector<T>> referenceData = defineReferenceData(cfg);
+    if (!verifyEqualOutputs(h_out, referenceData))
+       return false;
+    std::cout << "Test PASSED" << std::endl;
+    std::cout << "Done\n";
+
+    return true;
+}
+
+template <typename T, typename Op>
+bool verify_test
+(
+    const std::string& testName
+  , uint numElements
+  , uint os
+  , uint os1
+  , const T cx
+  , const T cy
+  , Op op)
+{    
+    // Prepare the kernel launch
+    auto cfg = prepareKernelLaunch<T>( testName, numElements, {}, { os, os1 });
+
+    if (!verifyCudaStatus("prepare", testName))
+        return false;
+    
+    watch w;
+    // Execute the kernel
+    apply_op<T><<<cfg.blocksPerGrid, cfg.threadsPerBlock>>>(cfg.d_outputs[0], cfg.d_outputs[1], numElements, cx, cy, op);
+    cudaDeviceSynchronize();
+
+    std::cout << "CUDA kernel done in: " << w.elapsed() << "s" << std::endl;
+    if (!verifyCudaStatus("launch", testName))
+        return false;
+    
+    std::vector<std::vector<T>> h_out = returnOutputs(cfg);
+    op(0, cfg.h_outputs[0], cfg.h_outputs[1], cx, cy);
+    std::vector<std::vector<T>> referenceData = defineReferenceData(cfg);
+    if (!verifyEqualOutputs(h_out, referenceData))
+       return false;
+    std::cout << "Test PASSED" << std::endl;
+    std::cout << "Done\n";
+
+    return true;
+}
+
+template <typename T, typename Op>
+bool verify_test
+(
+    const std::string& testName
+  , uint numElements
+  , uint os
+  , uint os1
+  , uint os2
+  , const T cx
+  , const T cy
+  , Op op)
+{    
+    // Prepare the kernel launch
+    auto cfg = prepareKernelLaunch<T>( testName, numElements, {}, { os, os1, os2 });
+
+    if (!verifyCudaStatus("prepare", testName))
+        return false;
+    
+    watch w;
+    // Execute the kernel
+    apply_op<T><<<cfg.blocksPerGrid, cfg.threadsPerBlock>>>(cfg.d_outputs[0], cfg.d_outputs[1], cfg.d_outputs[2], numElements, cx, cy, op);
+    cudaDeviceSynchronize();
+
+    std::cout << "CUDA kernel done in: " << w.elapsed() << "s" << std::endl;
+    if (!verifyCudaStatus("launch", testName))
+        return false;
+    
+    std::vector<std::vector<T>> h_out = returnOutputs(cfg);
+    op(0, cfg.h_outputs[0], cfg.h_outputs[1], cfg.h_outputs[2], cx, cy);
+    std::vector<std::vector<T>> referenceData = defineReferenceData(cfg);
+    if (!verifyEqualOutputs(h_out, referenceData))
+       return false;
+    std::cout << "Test PASSED" << std::endl;
+    std::cout << "Done\n";
+
+    return true;
+}
+
+template <typename T, typename Op>
+bool verify_test
+(
+    const std::string& testName
+  , uint numElements
+  , uint os
+  , uint os1
+  , uint os2
+  , const T cx
+  , const T cy
+  , const T cz
+  , Op op)
+{    
+    // Prepare the kernel launch
+    auto cfg = prepareKernelLaunch<T>( testName, numElements, {}, { os, os1, os2 });
+
+    if (!verifyCudaStatus("prepare", testName))
+        return false;
+    
+    watch w;
+    // Execute the kernel
+    apply_op<T><<<cfg.blocksPerGrid, cfg.threadsPerBlock>>>(cfg.d_outputs[0], cfg.d_outputs[1], cfg.d_outputs[2], numElements, cx, cy, cz, op);
+    cudaDeviceSynchronize();
+
+    std::cout << "CUDA kernel done in: " << w.elapsed() << "s" << std::endl;
+    if (!verifyCudaStatus("launch", testName))
+        return false;
+    
+    std::vector<std::vector<T>> h_out = returnOutputs(cfg);
+    op(0, cfg.h_outputs[0], cfg.h_outputs[1], cfg.h_outputs[2], cx, cy, cz);
+    std::vector<std::vector<T>> referenceData = defineReferenceData(cfg);
+    if (!verifyEqualOutputs(h_out, referenceData))
+       return false;
+    std::cout << "Test PASSED" << std::endl;
+    std::cout << "Done\n";
+
+    return true;
+}
+
+template <typename T, typename Op>
+bool verify_test
+(
+    const std::string& testName
+  , uint numElements
+  , uint os
+  , uint os1
+  , uint os2
+  , uint os3
+  , const T cx
+  , const T cy
+  , Op op)
+{    
+    // Prepare the kernel launch
+    auto cfg = prepareKernelLaunch<T>( testName, numElements, {}, { os, os1, os2, os3 });
+
+    if (!verifyCudaStatus("prepare", testName))
+        return false;
+    
+    watch w;
+    // Execute the kernel
+    apply_op<T><<<cfg.blocksPerGrid, cfg.threadsPerBlock>>>(cfg.d_outputs[0], cfg.d_outputs[1], cfg.d_outputs[2], cfg.d_outputs[3], numElements, cx, cy, op);
+    cudaDeviceSynchronize();
+
+    std::cout << "CUDA kernel done in: " << w.elapsed() << "s" << std::endl;
+    if (!verifyCudaStatus("launch", testName))
+        return false;
+    
+    std::vector<std::vector<T>> h_out = returnOutputs(cfg);
+    op(0, cfg.h_outputs[0], cfg.h_outputs[1], cfg.h_outputs[2], cfg.h_outputs[3], cx, cy);
+    std::vector<std::vector<T>> referenceData = defineReferenceData(cfg);
+    if (!verifyEqualOutputs(h_out, referenceData))
+       return false;
+    std::cout << "Test PASSED" << std::endl;
+    std::cout << "Done\n";
+
+    return true;
+}
+
+template <typename T, typename Op>
+bool verify_test
+(
+    const std::string& testName
+  , uint numElements
+  , uint os
+  , uint os1
+  , uint os2
+  , uint os3
+  , const T cx
+  , const T cy
+  , const T cz
+  , Op op)
+{    
+    // Prepare the kernel launch
+    auto cfg = prepareKernelLaunch<T>( testName, numElements, {}, { os, os1, os2, os3 });
+
+    if (!verifyCudaStatus("prepare", testName))
+        return false;
+    
+    watch w;
+    // Execute the kernel
+    apply_op<T><<<cfg.blocksPerGrid, cfg.threadsPerBlock>>>(cfg.d_outputs[0], cfg.d_outputs[1], cfg.d_outputs[2], cfg.d_outputs[3], numElements, cx, cy, cz, op);
+    cudaDeviceSynchronize();
+
+    std::cout << "CUDA kernel done in: " << w.elapsed() << "s" << std::endl;
+    if (!verifyCudaStatus("launch", testName))
+        return false;
+    
+    std::vector<std::vector<T>> h_out = returnOutputs(cfg);
+    op(0, cfg.h_outputs[0], cfg.h_outputs[1], cfg.h_outputs[2], cfg.h_outputs[3], cx, cy, cz);
+    std::vector<std::vector<T>> referenceData = defineReferenceData(cfg);
+    if (!verifyEqualOutputs(h_out, referenceData))
+       return false;
+    std::cout << "Test PASSED" << std::endl;
+    std::cout << "Done\n";
+
+    return true;
+}
+
+template <typename T, typename Op>
+bool verify_test
+(
+    const std::string& testName
+  , uint numElements
+  , uint os
+  , uint os2
+  , uint os3
+  , uint os4
+  , uint os5
+  , const T cx
+  , const T cy
+  , Op op)
+{    
+    // Prepare the kernel launch
+    auto cfg = prepareKernelLaunch<T>( testName, numElements, {}, { os, os2, os3, os4, os5 });
+
+    if (!verifyCudaStatus("prepare", testName))
+        return false;
+    
+    watch w;
+    // Execute the kernel
+    apply_op<T><<<cfg.blocksPerGrid, cfg.threadsPerBlock>>>(cfg.d_outputs[0], cfg.d_outputs[1], cfg.d_outputs[2], cfg.d_outputs[3], cfg.d_outputs[4], numElements, cx, cy, op);
+    cudaDeviceSynchronize();
+
+    std::cout << "CUDA kernel done in: " << w.elapsed() << "s" << std::endl;
+    if (!verifyCudaStatus("launch", testName))
+        return false;
+    
+    std::vector<std::vector<T>> h_out = returnOutputs(cfg);
+    op(0, cfg.h_outputs[0], cfg.h_outputs[1], cfg.h_outputs[2], cfg.h_outputs[3], cfg.h_outputs[4], cx, cy);
+    std::vector<std::vector<T>> referenceData = defineReferenceData(cfg);
+    if (!verifyEqualOutputs(h_out, referenceData))
+       return false;
+    std::cout << "Test PASSED" << std::endl;
+    std::cout << "Done\n";
+
+    return true;
 }
 
 #endif  // BOOST_MATH_TEST_AUTODIFF_HPP
