@@ -78,6 +78,7 @@ BOOST_MATH_CUDA_ENABLED constexpr UnaryFunction for_each(InputIt first, InputIt 
     }
     return f;
 }
+
 #else
 using std::min;
 using std::fill;
