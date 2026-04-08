@@ -97,7 +97,6 @@ struct get_order_sum_t<fvar<RealType, Order>>
 
 template <typename T>
 using get_order_sum = get_order_sum_t<typename std::decay<T>::type>;
-//struct get_order_sum : get_order_sum_t<std::remove_cv_t<std::remove_reference_t<T>>> {};
 
 template <typename RealType>
 struct get_root_type {
