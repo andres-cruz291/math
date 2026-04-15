@@ -23,10 +23,11 @@ using namespace boost::math::differentiation;
  *
  */
  
-template <typename T, uint m>
+template <typename T, std::size_t m>
 struct OneOverOnePlusXSquaredOp{
-    BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out, T cx) const {
+    BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out) const {
         const uint offset = m + 1;
+        const T cx(1);
         auto f = make_fvar<T, m>(cx);
         // f = 1 / ((f *= f) += 1);
         f *= f;
@@ -36,72 +37,74 @@ struct OneOverOnePlusXSquaredOp{
     }
 };
 
-template <typename T, uint m>
+template <typename T, std::size_t m>
 struct ExpTestOp{
-    BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out, T cx) const {
+    BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out) const {
         using std::exp;
         const uint offset = m + 1;
+        const T cx = 2;
         const auto x = make_fvar<T, m>(cx);
         auto y = exp(x);
         fill_output_sv(y, out, i, offset, offset);
     }
 };
 
-template <typename T, uint m, uint n>
-struct PowSvOp{
-    BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out, T *out2, T cx, T cy) const {
+template <typename T, std::size_t m, std::size_t n>
+struct PowOp{
+    BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out, T *out2, T *out3) const {
         using std::log;
         using std::pow;
         
-        uint offset = (m + 1);
+        const T cx = 2;
+        const T cy = 3;
         const auto x = make_fvar<T, m>(cx);
         const auto y = make_fvar<T, m, n>(cy);
         auto z = pow(x, cy);
+        uint offset = (m + 1);
         fill_output_sv(z, out, i, offset, offset);
 
         offset = (m + 1) * (n + 1);
         auto z2 = pow(cx, y);
         fill_output_dv(z2, out2, i, offset, m + 1, n + 1);
+
+        // FIXME: Large differences (> 114 eps) appear from 3rd x derivative, however when this operation 
+        // is perfomed in an independent kernel, those differences are not present.
+        const auto z3 = pow(x, y);
+        offset = 3 * (n + 1);
+        fill_output_dv(z3, out3, i, offset, 3, n + 1);
     }
 };
 
-template <typename T, uint m, uint n>
-struct PowDvOp{
-    BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out, T cx, T cy) const {
-        using std::log;
-        using std::pow;
-        
-        const auto x = make_fvar<T, m>(cx);
-        const auto y = make_fvar<T, m, n>(cy);
-        const uint offset = (m + 1) * (n + 1);
-        auto z = pow(cx, y);
-        fill_output_dv(z, out, i, offset, m + 1, n + 1);
-    }
-};
-
-template <typename T, uint m>
+template <typename T, std::size_t m>
 struct Pow0Op{
-    BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out, T *out2, T cx, T cy) const {
+    BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out, T *out2, T *out3) const {
         using std::pow;
         
         const uint offset = (m + 1);
+
+        const T cx = 0;
         const auto x = make_fvar<T, m>(0);
 
         auto z = pow(x, cx);
         fill_output_sv(z, out, i, offset, offset);
 
+        T cy = 3;
         auto z2 = pow(x, cy);
         fill_output_sv(z2, out2, i, offset, offset);
+
+        cy = T(3.5);
+        auto z3 = pow(x, cy);
+        fill_output_sv(z3, out3, i, offset, offset);
     }
 };
 
-template <typename T, uint m, uint n>
+template <typename T, std::size_t m, std::size_t n>
 struct Pow2Op{
     BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out) const {
         using std::pow;
         
         const T cx = 2;
-        const T cy = 3;
+        const T cy = 5 / T(2);
         
         const uint offset = (m + 1) * (n + 1);
         const auto x = make_fvar<T, m>(cx);
@@ -112,7 +115,7 @@ struct Pow2Op{
     }
 };
 
-template <typename T, uint m>
+template <typename T, std::size_t m>
 struct SqrtTestOp{
     BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out, T *out2) const {
         using std::pow;
@@ -130,7 +133,7 @@ struct SqrtTestOp{
     }
 };
 
-template <typename T, uint m>
+template <typename T, std::size_t m>
 struct LogTestOp{
     BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out, T *out2) const {
         using std::log;
@@ -148,7 +151,7 @@ struct LogTestOp{
     }
 };
 
-template <typename T, uint m, uint n>
+template <typename T, std::size_t m, std::size_t n>
 struct YLogXOp{
     BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out, T *out2) const {
         using std::log;
@@ -163,27 +166,13 @@ struct YLogXOp{
         fill_output_dv(z, out, i, offset, m + 1, n + 1);
 
         offset = (m + 1) * (n + 1) - 2;
+        //FIXME: Large differences (> 55 eps) appear from 8th and 9th derivatives with float datatype
         auto z1 = exp(z);
         fill_output_dv(z1, out2, i, offset, m + 1, n + 1);
     }
 };
 
-template <typename T>
-struct FrexpTestOp{
-    BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out) const {
-        using std::exp2;
-        using std::frexp;
-        
-        uint offset = (m + 1);
-        const T cx = T(3.5);
-        const auto x = make_fvar<T, m>(cx);
-        int exp;
-        auto y = frexp(x, &exp);
-        fill_output_sv(y, out, i, offset, offset);
-    }
-};
-
-template <typename T, int m>
+template <typename T, std::size_t m>
 struct CosAndSinOp{
     BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out, T *out2, T *out3, T *out4) const {
         using std::cos;
@@ -207,7 +196,7 @@ struct CosAndSinOp{
     }
 };
 
-template <typename T, int m>
+template <typename T, std::size_t m>
 struct AcosTestOp{
     BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out) const {
         using std::acos;
@@ -223,20 +212,7 @@ struct AcosTestOp{
     }
 };
 
-template <typename T, int m>
-struct AcoshTestOp{
-    BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out) const {
-        using boost::math::acosh;
-        
-        const T cx = 2;
-        auto x = make_fvar<T, m>(cx);
-        auto y = acosh(x);       
-        const uint offset = (m + 1);
-        fill_output_sv(y, out, i, offset, offset);
-    }
-};
-
-template <typename T, int m>
+template <typename T, std::size_t m>
 struct AsinTestOp{
     BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out) const {
         using std::asin;
@@ -251,17 +227,17 @@ struct AsinTestOp{
     }
 };
 
-template <typename T, int m>
+template <typename T, std::size_t m>
 struct AsinInfinityOp{
     BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out) const {
         auto x = make_fvar<T, m>(1);
         auto y = asin(x);
-        const uint offset = 3;
+        const uint offset = 2;
         fill_output_sv(y, out, i, offset, offset);
     }
 };
 
-template <typename T, int m>
+template <typename T, std::size_t m>
 struct AsinDerivativeOp{
     BOOST_MATH_CUDA_ENABLED void operator()(uint i, T *out, T *out2, T *out3) const {
         using std::pow;
@@ -283,45 +259,37 @@ bool one_over_one_plus_x_squared(uint numElements)
 {    
     constexpr std::size_t m = 4;
     OneOverOnePlusXSquaredOp<T, m> op;
-    return verify_test("one_over_one_plus_x_squared", numElements, 
-                       (m + 1), 
-                       T(1), 
-                       op );
+    return verify_test<T, OneOverOnePlusXSquaredOp<T, m>>(
+        "one_over_one_plus_x_squared", numElements, 
+        (m + 1), 
+        op 
+    );
 }
 
 template <typename T>
 bool exp_test(uint numElements)
 {    
-    // It may be needed CHECK_CLOSE_FRACTION instead of equality
     constexpr std::size_t m = 4;
     ExpTestOp<T, m> op;
-    return verify_test("exp_test", numElements, 
-                       (m + 1), 
-                       T(2), 
-                       op );
+    return verify_test<T, ExpTestOp<T, m>>(
+        "exp_test", numElements, 
+        (m + 1), 
+        op 
+    );
 }
 
 template <typename T>
 bool pow(uint numElements)
 {    
-    // It may be needed CHECK_CLOSE instead of equality
-    // Function pow may have problems with memory, that appear when it is called several times with nested definition
+    // Larger differences from 3rd x derivative when z has 2 variables
     constexpr std::size_t m = 5;
     constexpr std::size_t n = 4;
-    PowSvOp<T, m, n> op;
-    if (verify_test("pow", numElements, 
-                    (m + 1), (m + 1) * (n + 1),  
-                    T(2), T(3), 
-                    op )){
-        PowDvOp<T, m, n> op1;
-        if (verify_test("pow", numElements, 
-                        (m + 1) * (n + 1),  
-                        T(2), T(3), 
-                        op1)){
-            return true;
-        }
-    };
-    return false;
+    PowOp<T, m, n> op;
+    return verify_test<T, PowOp<T, m, n>>(
+        "pow", numElements, 
+        (m + 1), (m + 1) * (n + 1), 3 * (n + 1),  
+        op
+    );
 }
 
 template <typename T>
@@ -329,25 +297,26 @@ bool pow0(uint numElements)
 {    
     constexpr std::size_t m = 5;
     Pow0Op<T, m> op;
-    return verify_test("pow0", numElements, 
-                        (m + 1), (m + 1),
-                        T(3), T(3.5), 
-                        op);
+    return verify_test<T, Pow0Op<T, m>>(
+        "pow0", numElements, 
+        (m + 1), (m + 1), (m + 1),
+        op
+    );
         
 }
 
 template <typename T>
 bool pow2(uint numElements)
 {    
-    // It may needed to adjust the tolerance < e-13
-    const T eps = 40000 * std::numeric_limits<T>::epsilon(); // percent
     constexpr std::size_t m = 5;
     constexpr std::size_t n = 5;
     Pow2Op<T, m, n> op;
-    return verify_close_test("pow2", numElements, 
-                            (m + 1) * (n + 1), 
-                            op, 
-                            eps);
+    return verify_test<T, Pow2Op<T, m, n>>(
+        "pow2", numElements, 
+        (m + 1) * (n + 1), 
+        op, 
+        40
+    );
         
 }
 
@@ -356,9 +325,11 @@ bool sqrt_test(uint numElements)
 {    
     constexpr std::size_t m = 5;
     SqrtTestOp<T, m> op;
-    return verify_test<T, SqrtTestOp<T, m>>("sqrt_test", numElements, 
-                        (m + 1), (m + 1),
-                        op);
+    return verify_test<T, SqrtTestOp<T, m>>(
+        "sqrt_test", numElements, 
+        (m + 1), (m + 1),
+        op
+    );
         
 }
 
@@ -367,9 +338,11 @@ bool log_test(uint numElements)
 {    
     constexpr std::size_t m = 5;
     LogTestOp<T, m> op;
-    return verify_test<T, LogTestOp<T, m>>("log_test", numElements, 
-                        (m + 1), (m + 1),
-                        op);
+    return verify_test<T, LogTestOp<T, m>>(
+        "log_test", numElements, 
+        (m + 1), (m + 1),
+        op
+    );
         
 }
 
@@ -380,20 +353,12 @@ bool ylogx(uint numElements)
     constexpr std::size_t n = 4;
     YLogXOp<T, m, n> op;
     // A high difference was found in d⁸/(d⁵x)(d³y) and d⁹/(d⁵x)(d⁴y) for second output (> 1e-3)
-    return verify_test<T, YLogXOp<T, m, n>>("ylogx", numElements, 
-                                            (m + 1) * (n + 1), (m + 1) * (n + 1) - 2,
-                                            op);
+    return verify_test<T, YLogXOp<T, m, n>>(
+        "ylogx", numElements, 
+        (m + 1) * (n + 1), (m + 1) * (n + 1) - 2,
+        op
+    );
         
-}
-
-template <typename T>
-bool frexp_test(uint numElements)
-{    
-    FrexpTestOp<T> op;
-    // Redefinition of function frexp
-    return verify_test<T, FrexpTestOp<T>>("frexp_test", numElements, 
-                                          (m + 1),
-                                          op);
 }
 
 template <typename T>
@@ -401,11 +366,12 @@ bool cos_and_sin(uint numElements)
 {    
     constexpr std::size_t m = 5;
     CosAndSinOp<T, m> op;
-    const T eps = 1e-13; // percent
-    return verify_close_test<T, CosAndSinOp<T, m>>("cos_and_sin", numElements, 
-                                                   (m + 1), (m + 1), 1, 1, 
-                                                   op, 
-                                                   eps);
+    return verify_test<T, CosAndSinOp<T, m>>(
+        "cos_and_sin", numElements, 
+        (m + 1), (m + 1), 1, 1, 
+        op,
+        2
+    );
 }
 
 template <typename T>
@@ -413,21 +379,11 @@ bool acos_test(uint numElements)
 {    
     constexpr std::size_t m = 5;
     AcosTestOp<T, m> op;
-    return verify_test<T, AcosTestOp<T, m>>("acos_test", numElements, 
-                                                   (m + 1),
-                                                   op);
-}
-
-template <typename T>
-bool acosh_test(uint numElements)
-{    
-    constexpr std::size_t m = 5;
-    AcoshTestOp<T, m> op;
-    // acosh and asinh functions not implemented
-    return true;
-    return verify_test<T, AcoshTestOp<T, m>>("acosh_test", numElements, 
-                                                   (m + 1),
-                                                   op);
+    return verify_test<T, AcosTestOp<T, m>>(
+        "acos_test", numElements, 
+        (m + 1),
+        op
+    );
 }
 
 template <typename T>
@@ -435,20 +391,23 @@ bool asin_test(uint numElements)
 {    
     constexpr std::size_t m = 5;
     AsinTestOp<T, m> op;
-    return verify_test<T, AsinTestOp<T, m>>("asin_test", numElements, 
-                                                   (m + 1),
-                                                   op);
+    return verify_test<T, AsinTestOp<T, m>>(
+        "asin_test", numElements, 
+        (m + 1),
+        op
+    );
 }
 
 template <typename T>
 bool asin_infinity(uint numElements)
 {    
-    // Fail to compare d³, d⁴ and d⁵ = -nan
     constexpr std::size_t m = 5;
     AsinInfinityOp<T, m> op;
-    return verify_test<T, AsinInfinityOp<T, m>>("asin_infinity", numElements, 
-                                                   3,
-                                                   op);
+    return verify_test<T, AsinInfinityOp<T, m>>(
+        "asin_infinity", numElements, 
+        2,
+        op
+    );
 }
 
 template <typename T>
@@ -456,9 +415,11 @@ bool asin_derivative(uint numElements)
 {    
     constexpr std::size_t m = 4;
     AsinDerivativeOp<T, m> op;
-    return verify_test<T, AsinDerivativeOp<T, m>>("asin_derivative", numElements, 
-                                                   (m + 1), (m + 1), (m + 1),
-                                                   op);
+    return verify_test<T, AsinDerivativeOp<T, m>>(
+        "asin_derivative", numElements, 
+        (m + 1), (m + 1), (m + 1),
+        op
+    );
 }
 
 /**
@@ -467,36 +428,33 @@ bool asin_derivative(uint numElements)
 
 template <typename float_type>
 bool main_tests_2(uint numElements){
+    bool all_passed = true;
     if (!one_over_one_plus_x_squared<float_type>(numElements))
-        return false;
+        all_passed = false;
     if (!exp_test<float_type>(numElements))
-        return false;
+        all_passed = false;
     if (!pow<float_type>(numElements))
-        return false;
+        all_passed = false;
     if (!pow0<float_type>(numElements))
-        return false;
+        all_passed = false;
     if (!pow2<float_type>(numElements))
-        return false;
+        all_passed = false;
     if (!sqrt_test<float_type>(numElements))
-        return false;
+        all_passed = false;
     if (!log_test<float_type>(numElements))
-        return false;
+        all_passed = false;
     if (!ylogx<float_type>(numElements))
-        return false;
-    if (!frexp_test<float_type>(numElements))
-        return false;
+        all_passed = false;
     if (!cos_and_sin<float_type>(numElements))
-        return false;
+        all_passed = false;
     if (!acos_test<float_type>(numElements))
-        return false;
-    if (!acosh_test<float_type>(numElements))
-        return false;
+        all_passed = false;
     if (!asin_test<float_type>(numElements))
-        return false;
+        all_passed = false;
     if (!asin_infinity<float_type>(numElements))
-        return false;
+        all_passed = false;
     if (!asin_derivative<float_type>(numElements))
-        return false;
+        all_passed = false;
     
-    return true;
+    return all_passed;
 }

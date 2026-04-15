@@ -1533,25 +1533,16 @@ BOOST_MATH_CUDA_ENABLED fvar<RealType, Order> log(fvar<RealType, Order> const& c
     return cr.apply_coefficients_nonhorner(order, [&d0, &d1](size_t i) { return i ? d1[i - 1] / i : d0; });
   }
 }
-#ifdef __CUDACC__
-template <typename RealType, size_t Order>
-BOOST_MATH_CUDA_ENABLED fvar<RealType, Order> frexp(fvar<RealType, Order> const& cr, int* exp) {
-  using std::exp2;
-  using std::frexp;
-  using root_type = typename fvar<RealType, Order>::root_type;
-  frexp(static_cast<root_type>(cr), exp);
-  return cr * static_cast<root_type>(exp2(root_type(-*exp)));
-}
-#else
+
 template <typename RealType, size_t Order>
 fvar<RealType, Order> frexp(fvar<RealType, Order> const& cr, int* exp) {
   using std::exp2;
   using std::frexp;
   using root_type = typename fvar<RealType, Order>::root_type;
   frexp(static_cast<root_type>(cr), exp);
+  //FIXME: exp2 using int parameter not overloaded with CUDA support
   return cr * static_cast<root_type>(exp2(-*exp));
 }
-#endif
 
 template <typename RealType, size_t Order>
 BOOST_MATH_CUDA_ENABLED fvar<RealType, Order> ldexp(fvar<RealType, Order> const& cr, int exp) {
