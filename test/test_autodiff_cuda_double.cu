@@ -13,12 +13,13 @@
  */
 int main(void)
 {
+    bool all_passed = true;
     if (!main_tests_1<double>(32))
-        return EXIT_FAILURE;
+        all_passed = false;
     if (!main_tests_2<double>(32))
-        return EXIT_FAILURE;
+        all_passed = false;
     if (!main_tests_3<double>(32))
-        return EXIT_FAILURE;
+        all_passed = false;
 
-    return 0;
+    return all_passed ? 0 : EXIT_FAILURE;
 }
