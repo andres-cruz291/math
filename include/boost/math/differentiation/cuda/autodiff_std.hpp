@@ -70,10 +70,12 @@ BOOST_MATH_CUDA_ENABLED constexpr T factorial(unsigned n)
     return result;
 }
 
-template <class T>
-BOOST_MATH_CUDA_ENABLED constexpr const T& min(const T& a, const T& b)
+template <class T, class U>
+BOOST_MATH_CUDA_ENABLED constexpr auto min(const T& a, const U& b)
+    -> typename std::common_type<T, U>::type
 {
-    return (b < a) ? b : a;
+    using R = typename std::common_type<T, U>::type;
+    return (b < a) ? static_cast<R>(b) : static_cast<R>(a);
 }
 
 template <class InputIt, class UnaryFunction>
